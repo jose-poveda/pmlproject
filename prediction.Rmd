@@ -1,0 +1,67 @@
+---
+title: "Prediction project"
+author: "José Luis Poveda"
+date: "Saturday, March 21, 2015"
+output: html_document
+---
+
+In this project, we'll predict the output for a human activity recognition experiment. The subjects were given several monitoring device while practicing weigth lifting. For this task, first we explored data, and removed the irrelevan information such as statistics, time stamps and names of the subjects. The statistics were eliminated due to introduction of NA and because we want to predict from the raw data. Time stamps and names may lead to overfitting and bias.
+
+```{r training}
+library(caret)
+training = read.csv("pml-training.csv")
+testing = read.csv("pml-testing.csv")
+training = training[-grep("^skewness|^kurtosis|^max|^min|^avg|^var|^std|^amplitude", colnames(training))]
+training = training[-grep("timestamp", colnames(training))]
+training = training[-c(1:4)]
+testing = testing[-grep("^skewness|^kurtosis|^max|^min|^avg|^var|^std|^amplitude", colnames(testing))]
+testing = testing[-grep("timestamp", colnames(testing))]
+testing = testing[-c(1:4)]
+```
+
+We split the original data set in a training set and a testing set. 
+
+```{r split}
+set.seed(1250)
+intrain = createDataPartition(y=training$classe, p = 0.7, list=FALSE)
+train2 = training[intrain,]
+test2 = training[-intrain,]
+```
+
+We'll use the *Random Forest* approach due to the prediction being of a categorical variable. First we estimate a model and then we verify it in the test set we split before.
+Something important to notice is as we're performing a random forest, cross validation isn't needed per se as it's done already in the algorith as stated here: http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr
+
+```
+In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test Each tree is constructed using a different bootstrap sample from the original data. About one-third of the cases are left out of the bootstrap sample and not used in the construction of the kth tree.
+```
+
+This could mean that the cross validation ocurrs in 3 folds.
+
+```{r model}
+library(randomForest)
+mf1 = randomForest(classe~., data = train2, ntree=1000)
+mf1
+```
+
+The OOB or "out of bag" error estimate is 0.55% for all the cross-validations done. It is also mentioned the error of every possible class, meaning the relative error of mistaking the variables for another class.
+
+```{r prediction}
+pred=predict(mf1, test2)
+test2$predRight = pred == test2$classe
+table(pred, test2$classe)
+```
+
+The relative error for each class are: A = 0.0018, B = 0.0044, C = 0.0089, D = 0.0021, E = 0.0018, which are really good estimates
+
+This is a first approximation which is a really good one, but has the inconvenience of using more than 50 variables. So, the variable's importance was examined. Only the top 10 variables were chosen from this new list:
+
+```{r round two}
+order(importance(mf1, type = 2), decreasing = TRUE)[1:10]
+mf2 = randomForest(classe~roll_belt + yaw_belt + pitch_forearm + magnet_dumbbell_z + pitch_belt + magnet_dumbbell_y + roll_forearm + magnet_dumbbell_x + accel_dumbbell_y + accel_belt_z, data = train2, ntree=800)
+mf2
+pred2=predict(mf2, test2)
+test2$predRight = pred == test2$classe
+table(pred2, test2$classe)
+```
+
+This has a lower load for a CPU, with just a 1.3% error, which is still a very good prediction rate.
